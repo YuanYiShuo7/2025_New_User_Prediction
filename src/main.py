@@ -46,7 +46,7 @@ def train_model(X, y):
         "metric": "auc",
         "boosting_type": "gbdt",
         "num_leaves": 63,
-        "learning_rate": 0.02,
+        "learning_rate": 0.05,
         "feature_fraction": 0.9,
         "verbosity": 1,
         "seed": 42,
@@ -128,7 +128,7 @@ if __name__ == "__main__":
     model = train_model(X_train, y_train)
     
     # 生成提交
-    saved_path = make_submission(model, X_test, train, test, submission_code, threshold= 0.45, cover= True)
+    saved_path = make_submission(model, X_test, train, test, submission_code, threshold= 0.4, cover= True)
     
     # 打印特征重要性
     lgb.plot_importance(model, max_num_features=20, figsize=(10, 6))
