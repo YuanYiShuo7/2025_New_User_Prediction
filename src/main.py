@@ -75,50 +75,47 @@ def make_submission(model, X_test, train, test, code, threshold=0.5, cover=False
     predictions = (preds > threshold).astype(int) if threshold is not None else preds
 
     if cover:
-        # 创建提交DataFrame
+        # 创建提交DataFrame，保留did和common_ts列用于匹配
         submission = pd.DataFrame({
             "did": test["did"],
             "common_ts": test["common_ts"],
             "is_new_did": predictions
         })
         
-        # 预处理：为train添加标记列
-        train = train.copy()
-        train['is_zero_condition'] = (train['is_new_did'] == 0).astype(int)
-        train['is_one_condition'] = (train['is_new_did'] == 1).astype(int)
+        # 按did分组train数据，便于后续查找
+        train_groups = train.groupby("did")
         
-        # 对每个did，找出最小的时间戳满足is_new_did=0（用于条件1）
-        condition1 = train[train['is_new_did'] == 0].groupby('did')['common_ts'].max().reset_index()
-        condition1.columns = ['did', 'max_ts_for_zero']
+        # 记录覆盖的行数
+        overridden_rows = 0
         
-        # 对每个did，找出最大的时间戳满足is_new_did=1（用于条件2）
-        condition2 = train[train['is_new_did'] == 1].groupby('did')['common_ts'].min().reset_index()
-        condition2.columns = ['did', 'min_ts_for_one']
-        
-        # 合并条件到submission
-        submission = submission.merge(condition1, on='did', how='left')
-        submission = submission.merge(condition2, on='did', how='left')
-        
-        # 应用条件1：存在时间戳<=test且is_new_did=0
-        mask_condition1 = (submission['common_ts'] >= submission['max_ts_for_zero']) & ~submission['max_ts_for_zero'].isna()
-        
-        # 应用条件2：存在时间戳>=test且is_new_did=1 (且不满足条件1)
-        mask_condition2 = (submission['common_ts'] <= submission['min_ts_for_one']) & ~submission['min_ts_for_one'].isna() & ~mask_condition1
-        
-        # 记录原始预测用于统计
-        original_preds = submission['is_new_did'].copy()
-        
-        # 应用覆盖规则
-        submission.loc[mask_condition1, 'is_new_did'] = 0
-        submission.loc[mask_condition2, 'is_new_did'] = 1
-        
-        # 计算覆盖行数
-        overridden_rows = ((mask_condition1 | mask_condition2) & 
-                          (submission['is_new_did'] != original_preds)).sum()
+        for idx, row in submission.iterrows():
+            did = row["did"]
+            ts = row["common_ts"]
+            original_pred = row["is_new_did"]
+            
+            if did in train_groups.groups:
+                # 获取该did在train中的所有记录
+                train_records = train_groups.get_group(did)
+                
+                # 检查是否存在时间戳<=test且is_new_did=0的记录
+                condition1 = (train_records["common_ts"] <= ts) & (train_records["is_new_did"] == 0)
+                # 检查是否存在时间戳>=test且is_new_did=1的记录
+                condition2 = (train_records["common_ts"] >= ts) & (train_records["is_new_did"] == 1)
+                
+                if condition1.any():
+                    # 满足条件1，设置为0
+                    submission.at[idx, "is_new_did"] = 0
+                    if original_pred != 0:
+                        overridden_rows += 1
+                elif condition2.any():
+                    # 满足条件2，设置为1
+                    submission.at[idx, "is_new_did"] = 1
+                    if original_pred != 1:
+                        overridden_rows += 1
         
         print(f"覆盖了 {overridden_rows} 条记录")
         
-        # 保存文件
+        # 保存文件（不包含did和common_ts列）
         submission_path = f"{SUBMISSION_DIR}/submit_{code}.csv"
         submission[["is_new_did"]].to_csv(submission_path, index=False)
         print(f"Submission saved to: {submission_path}")
@@ -129,6 +126,7 @@ def make_submission(model, X_test, train, test, code, threshold=0.5, cover=False
         submission_path = f"{SUBMISSION_DIR}/submit_{code}.csv"
         submission.to_csv(submission_path, index=False)
         print(f"Submission saved to: {submission_path}")
+    
 
 if __name__ == "__main__":
     # 数据加载与处理
