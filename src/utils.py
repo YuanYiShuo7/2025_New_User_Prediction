@@ -87,7 +87,7 @@ def _encode_categorical(df):
 
 def _normalize_features(df):
     """数值特征归一化"""
-    num_cols = ['botId_code', 'pluginId_code', 'days_since_first', 'days_since_last']
+    num_cols = ['botId_code', 'pluginId_code', ]
     num_cols = [col for col in num_cols if col in df.columns]
     
     scaler = MinMaxScaler()
